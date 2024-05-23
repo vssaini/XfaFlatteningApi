@@ -1,0 +1,6 @@
+@XfaFlatteningApi_HostAddress = http://localhost:5086
+
+GET {{XfaFlatteningApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

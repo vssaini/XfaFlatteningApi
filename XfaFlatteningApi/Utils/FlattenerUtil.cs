@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using xfa_formCS;
 using XfaFlatteningApi.Contracts;
 using Exception = System.Exception;
+using Path = System.IO.Path;
 
 namespace XfaFlatteningApi.Utils
 {
@@ -23,17 +24,14 @@ namespace XfaFlatteningApi.Utils
         public async Task<byte[]> GetFlattenedBytesAsync(IFormFile? file)
         {
             var flattenedBytes = new byte[] { };
-            var tempFolderPath = GetTempFolderPath();
 
             try
             {
-                _logger.LogInformation("Creating temporary directory");
-                Directory.CreateDirectory(tempFolderPath);
-
-                var unFlattenedFilePath = await CreateUnFlattenedFileAsync(tempFolderPath, file);
+                var tempFolderPath = CreateTemporaryDirectory();
+                var unFlattenedFilePath = await SaveUserXfaFileAsync(tempFolderPath, file);
 
                 const string flattenedFileName = "flattened.pdf";
-                var flattenedFilePath = System.IO.Path.Combine(tempFolderPath, flattenedFileName);
+                var flattenedFilePath = Path.Combine(tempFolderPath, flattenedFileName);
 
                 flattenedBytes = FlattenTheFile(unFlattenedFilePath, flattenedFilePath);
             }
@@ -54,22 +52,27 @@ namespace XfaFlatteningApi.Utils
             return flattenedBytes;
         }
 
-        private string GetTempFolderPath()
+        private string CreateTemporaryDirectory()
         {
-            var tempRootFolder = _config["TempFolderPath"];
-            if (!Directory.Exists(tempRootFolder))
+            var rootFolder = _config["TempFolderPath"];
+            if (!Directory.Exists(rootFolder))
                 throw new DirectoryNotFoundException("Either TempFolderPath directory is invalid or doesn't exists.");
 
             var uniqueId = Guid.NewGuid().ToString("N");
 
             var tempFolderName = $"temp-{uniqueId}";
-            return System.IO.Path.Combine(tempRootFolder, tempFolderName);
+            var tempFolderPath = Path.Combine(rootFolder, tempFolderName);
+
+            _logger.LogInformation("Creating temporary directory {Path}", tempFolderPath);
+            Directory.CreateDirectory(tempFolderPath);
+
+            return tempFolderPath;
         }
 
-        private static async Task<string> CreateUnFlattenedFileAsync(string tempFolderPath, IFormFile? file)
+        private static async Task<string> SaveUserXfaFileAsync(string tempFolderPath, IFormFile? file)
         {
             const string unFlattenedFileName = "unflattened.pdf";
-            var unFlattenedFilePath = System.IO.Path.Combine(tempFolderPath, unFlattenedFileName);
+            var unFlattenedFilePath = Path.Combine(tempFolderPath, unFlattenedFileName);
 
             var inputFileBytes = await FileUtil.GetFileBytes(file);
             await File.WriteAllBytesAsync(unFlattenedFilePath, inputFileBytes);
@@ -81,53 +84,51 @@ namespace XfaFlatteningApi.Utils
         {
             _logger.LogInformation("Flattening the uploaded file.");
 
-            using (var pdfDoc = new PDFDoc(unFlattenedFilePath))
-            {
-                var errorCode = pdfDoc.Load(null);
-                if (errorCode != ErrorCode.e_ErrSuccess)
-                    throw new Exception("Error while loading doc");
+            using var pdfDoc = new PDFDoc(unFlattenedFilePath);
 
-                //using var pXfaDocHandler = new CFS_XFADocHandler();
-                using var xfaDoc = new XFADoc(pdfDoc);
-                xfaDoc.StartLoad(null);
-                xfaDoc.FlattenTo(flattenedFilePath);
-            }
+            var errorCode = pdfDoc.Load(null);
+            if (errorCode != ErrorCode.e_ErrSuccess)
+                throw new Exception("Error while loading doc");
+
+            //using var pXfaDocHandler = new CFS_XFADocHandler();
+            //var streamCallback = new CustomStreamCallback();
+            using var xfaDoc = new XFADoc(pdfDoc);
+            xfaDoc.StartLoad(null);
+            xfaDoc.FlattenTo(flattenedFilePath);
+            //xfaDoc.FlattenTo(streamCallback);
 
             _logger.LogInformation("Uploaded file flattened successfully!");
 
+            //return streamCallback.GetFlattenedData();
             return File.ReadAllBytes(flattenedFilePath);
         }
 
         public async Task<byte[]> GetFlattenedXfaPdfBytesAsync(IFormFile? file)
         {
             var flattenedBytes = new byte[] { };
-            var tempFolderPath = GetTempFolderPath();
 
             try
             {
-                //_foxitUtil.InitLibrary();
-
-                _logger.LogInformation("Creating temporary directory");
-                Directory.CreateDirectory(tempFolderPath);
-
-                var unFlattenedFilePath = await CreateUnFlattenedFileAsync(tempFolderPath, file);
+                var tempFolderPath = CreateTemporaryDirectory();
+                var unFlattenedFilePath = await SaveUserXfaFileAsync(tempFolderPath, file);
 
                 const string flattenedFileName = "flattened.pdf";
-                var flattenedFilePath = System.IO.Path.Combine(tempFolderPath, flattenedFileName);
+                var flattenedFilePath = Path.Combine(tempFolderPath, flattenedFileName);
 
                 flattenedBytes = FlattenAllPagesInPdfFile(unFlattenedFilePath, flattenedFilePath);
             }
             catch (PDFException ex)
             {
-                _logger.LogError(ex.Message);
+                _logger.LogError(ex, "Error while flattening PDF file.");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex.Message);
+                _logger.LogError(ex, "Error while flattening the PDF file.");
             }
             finally
             {
-                Library.Release();
+                Library.ReleaseOFDEngine();
+                _logger.LogInformation("Foxit PDF SDK resources released.");
             }
 
             return flattenedBytes;
@@ -173,7 +174,7 @@ namespace XfaFlatteningApi.Utils
 
                 using (var doc = new PDFDoc(buffer, (uint)inputFileBytes.Length))
                 {
-                    var errorCode = doc.Load(null);
+                    var errorCode = doc.LoadW(null);
                     if (errorCode != ErrorCode.e_ErrSuccess)
                     {
                         throw new Exception("Error while loading doc");

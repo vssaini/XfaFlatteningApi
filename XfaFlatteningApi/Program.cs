@@ -25,5 +25,6 @@ app.MapControllers();
 
 var foxitUtil = app.Services.GetRequiredService<IFoxitUtil>();
 foxitUtil.InitLibrary();
+foxitUtil.SetLogFilePath();
 
 app.Run();

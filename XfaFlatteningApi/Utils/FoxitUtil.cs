@@ -40,4 +40,12 @@ public class FoxitUtil : IFoxitUtil
             Library.Release();
         }
     }
+
+    public void SetLogFilePath()
+    {
+        _logger.LogInformation("Setting the log file path...");
+        
+        const string logFilePath = "E:\\repos\\FlattenerManagement\\Logs.txt";
+        Library.SetLogFile(logFilePath);
+    }
 }

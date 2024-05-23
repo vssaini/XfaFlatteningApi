@@ -12,4 +12,5 @@ public interface IFoxitUtil
     void InitLibrary();
 
     void ReInitLibrary();
+    void SetLogFilePath();
 }
